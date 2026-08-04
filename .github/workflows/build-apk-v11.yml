@@ -1,10 +1,10 @@
-name: Build OddsWatch v1.1 APK
+name: Build OddsWatch APK
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - master
+  workflow_dispatch:
 
 jobs:
   build:
@@ -32,11 +32,10 @@ jobs:
         run: gradle assembleDebug
 
       - name: Preparar APK
-        run: | APK="$(find OddsWatch-Mobile/app/build/outputs/apk -type f -name '*.apk' | head -n 1)" echo "APK encontrado: $APK" test -n "$APK" cp "$APK" OddsWatch.apk ls -lh OddsWatch.apk 
+        run: | APK=$(find OddsWatch-Mobile/app/build/outputs/apk -type f -name "*.apk" | head -n 1) echo "APK encontrado: $APK" test -n "$APK" cp "$APK" OddsWatch.apk 
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: OddsWatch-Android
           path: OddsWatch.apk
           if-no-files-found: error
-          retention-days: 7
