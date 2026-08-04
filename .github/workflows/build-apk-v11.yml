@@ -14,9 +14,8 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Descomprimir OddsWatch v1.1
-        run: unzip -o OddsWatch-Mobile-1.1.zip
-
+      - name: Descomprimir OddsWatch
+        run: | rm -rf OddsWatch-Mobile unzip -o OddsWatch-Mobile-1.1.zip 
       - name: Instalar Java
         uses: actions/setup-java@v4
         with:
@@ -32,8 +31,12 @@ jobs:
         working-directory: OddsWatch-Mobile
         run: gradle assembleDebug
 
+      - name: Preparar APK
+        run: | APK="$(find OddsWatch-Mobile/app/build/outputs/apk -type f -name '*.apk' | head -n 1)" echo "APK encontrado: $APK" test -n "$APK" cp "$APK" OddsWatch.apk ls -lh OddsWatch.apk 
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
-          name: OddsWatch-v1.1-Android
-          path: OddsWatch-Mobile/app/build/outputs/apk/debug/app-debug.apk
+          name: OddsWatch-Android
+          path: OddsWatch.apk
+          if-no-files-found: error
+          retention-days: 7
