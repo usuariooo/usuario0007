@@ -52,6 +52,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private double vwapCumVolume;
 		private double vwapCumVolumePrice;
 		private double currentVwap;
+		private double prevRthVwap;
 		private bool rthVwapStarted;
 
 		private double sessionStartCumProfit;
@@ -128,7 +129,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (State == State.SetDefaults)
 			{
 				Name = "TradeifySelect25kBotV2";
-				Description = "V2 MNQ 5m Tradeify Select 25k: VWAP bounce + OR retest, longs y shorts.";
+				Description = "V2.1 MNQ 5m Tradeify Select 25k: VWAP/OR quality filters, stall off.";
 				Calculate = Calculate.OnBarClose;
 				EntriesPerDirection = 2;
 				EntryHandling = EntryHandling.AllEntries;
@@ -157,16 +158,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				Contracts = 4;
 				MaxContracts = 4;
-				MaxTradesPerDay = 5;
-				MaxTradesFriday = 3;
+				MaxTradesPerDay = 3;
+				MaxTradesFriday = 2;
 				ScalpProfitDollars = 80;
 				UseRunnerLeg = true;
-				AllowEnterOnStallCandle = true;
+				AllowEnterOnStallCandle = false;
 				AllowShorts = true;
 				TradeWithTrend = true;
 				UseVwapBounce = true;
 				UseOrRetest = true;
-				UseStallPattern = true;
+				UseStallPattern = false;
 				UseOrBreakout = false;
 
 				ImpulseBodyAtr = 0.22;
@@ -179,42 +180,42 @@ namespace NinjaTrader.NinjaScript.Strategies
 				EvalDailyHardCap = 580;
 				DailyLossLimit = -200;
 				FundedDailyLossLimit = -250;
-				StopAfterConsecutiveLosses = 3;
+				StopAfterConsecutiveLosses = 2;
 				RiskPerTradeDollars = 80;
-				ScalpTargetR = 1.25;
-				MinStopTicks = 16;
-				MaxStopTicks = 56;
-				AtrStopMultiplier = 0.50;
+				ScalpTargetR = 1.6;
+				MinStopTicks = 20;
+				MaxStopTicks = 52;
+				AtrStopMultiplier = 0.55;
 				UseStructureStop = true;
 				StructureStopBufferTicks = 2;
-				MoveToBreakEvenAtR = 1.25;
+				MoveToBreakEvenAtR = 1.4;
 				BreakEvenPlusTicks = 2;
-				StartTrailAtR = 1.7;
+				StartTrailAtR = 1.8;
 				TrailAtrMultiplier = 1.6;
 				MaxBarsInTrade = 24;
 				MinBarsInTrade = 1;
 
-				MinSignalScore = 60;
+				MinSignalScore = 72;
 				OpeningRangeBars = 3;
 				MidEmaPeriod = 21;
 				SlowEmaPeriod = 50;
 				AtrPeriod = 14;
 				AdxPeriod = 14;
-				MinAdx = 12;
+				MinAdx = 16;
 				RsiPeriod = 14;
-				RsiOverbought = 72;
-				RsiOversold = 28;
+				RsiOverbought = 68;
+				RsiOversold = 32;
 				VolumePeriod = 20;
-				VolumeMinRatio = 0.70;
-				MaxExtensionFromVwapTicks = 180;
-				MinOrRangePoints = 6;
-				MaxOrRangePoints = 90;
-				VwapTagTicks = 8;
+				VolumeMinRatio = 0.85;
+				MaxExtensionFromVwapTicks = 140;
+				MinOrRangePoints = 8;
+				MaxOrRangePoints = 70;
+				VwapTagTicks = 6;
 
-				TradeStartHour = 9;
-				TradeStartMinute = 45;
+				TradeStartHour = 10;
+				TradeStartMinute = 0;
 				MorningEndHour = 11;
-				MorningEndMinute = 30;
+				MorningEndMinute = 15;
 				AfternoonStartHour = 14;
 				AfternoonStartMinute = 0;
 				TradeEndHour = 15;
@@ -378,16 +379,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return false;
 			}
 
-			bool bounce = signal.Reason.IndexOf("VWAP", StringComparison.OrdinalIgnoreCase) >= 0;
-			if (!bounce && adx[0] < MinAdx)
+			if (adx[0] < MinAdx)
 			{
 				diagAdx++;
 				safetyStatus = "ADX FLOJO — SIN DIRECCION";
 				return false;
 			}
 
-			if (!bounce
-				&& currentVwap > 0
+			if (currentVwap > 0
 				&& Math.Abs(Close[0] - currentVwap) / TickSize > MaxExtensionFromVwapTicks)
 			{
 				diagVwapExt++;
@@ -406,6 +405,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 			{
 				diagRsi++;
 				safetyStatus = "RSI SOBREVENDIDO";
+				return false;
+			}
+
+			if (!IsQualityReversalBar(signal.Direction))
+			{
+				safetyStatus = "VELA DEBIL — SIN CUERPO";
 				return false;
 			}
 
@@ -658,6 +663,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			if (emaMid[0] < emaSlow[0])
 				return false;
+			if (emaMid[0] < emaMid[3])
+				return false;
 			if (Close[0] < emaSlow[0] && Close[1] < emaSlow[1])
 				return false;
 			if (!TradeWithTrend)
@@ -669,11 +676,31 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			if (emaMid[0] > emaSlow[0])
 				return false;
+			if (emaMid[0] > emaMid[3])
+				return false;
 			if (Close[0] > emaSlow[0] && Close[1] > emaSlow[1])
 				return false;
 			if (!TradeWithTrend)
 				return true;
 			return currentVwap <= 0 || LowestLow(4) <= currentVwap;
+		}
+
+		private bool IsQualityReversalBar(int direction)
+		{
+			double range = High[0] - Low[0];
+			if (range < 8 * TickSize || IsExhaustionBar())
+				return false;
+
+			double body = Math.Abs(Close[0] - Open[0]);
+			if (body < range * 0.32)
+				return false;
+
+			if (volumeSma[0] > 0 && Volume[0] < volumeSma[0] * VolumeMinRatio)
+				return false;
+
+			if (direction > 0)
+				return Close[0] > Open[0] && Close[0] >= Low[0] + 0.62 * range;
+			return Close[0] < Open[0] && Close[0] <= High[0] - 0.62 * range;
 		}
 
 		private SignalSnapshot TryVwapBounce(int direction)
@@ -682,30 +709,35 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return None("VWAP NO LISTO");
 
 			double range = High[0] - Low[0];
-			if (range < 6 * TickSize || IsExhaustionBar())
+			if (range < 8 * TickSize || IsExhaustionBar())
 				return None("VELA INVALIDA VWAP");
 
-			double tag = Math.Max(VwapTagTicks * TickSize, atr[0] * 0.25);
-			double maxOvershoot = Math.Max(atr[0] * 0.55, 10 * TickSize);
+			if (!IsQualityReversalBar(direction))
+				return None("REBOTE VWAP DEBIL");
+
+			double tag = Math.Max(VwapTagTicks * TickSize, atr[0] * 0.20);
+			double maxOvershoot = Math.Max(atr[0] * 0.40, 8 * TickSize);
 
 			if (direction > 0)
 			{
+				if (prevRthVwap > 0 && currentVwap + TickSize < prevRthVwap)
+					return None("VWAP CAYENDO — NO COMPRO");
+
 				bool tagged = Low[0] <= currentVwap + tag && Low[0] >= currentVwap - maxOvershoot;
-				bool reclaim = Close[0] > currentVwap
-					&& Close[0] > Open[0]
-					&& Close[0] >= Low[0] + 0.55 * range;
+				bool reclaim = Close[0] > currentVwap && Close[0] > Open[0];
 				if (!tagged || !reclaim)
 					return None("SIN REBOTE VWAP LONG");
-				return Hit(1, 82, "REBOTE VWAP — LONG");
+				return Hit(1, 84, "REBOTE VWAP — LONG");
 			}
 
+			if (prevRthVwap > 0 && currentVwap > prevRthVwap + TickSize)
+				return None("VWAP SUBIENDO — NO VENDO");
+
 			bool taggedShort = High[0] >= currentVwap - tag && High[0] <= currentVwap + maxOvershoot;
-			bool reject = Close[0] < currentVwap
-				&& Close[0] < Open[0]
-				&& Close[0] <= High[0] - 0.55 * range;
+			bool reject = Close[0] < currentVwap && Close[0] < Open[0];
 			if (!taggedShort || !reject)
 				return None("SIN REBOTE VWAP SHORT");
-			return Hit(-1, 82, "REBOTE VWAP — SHORT");
+			return Hit(-1, 84, "REBOTE VWAP — SHORT");
 		}
 
 		private SignalSnapshot TryOrRetest(int direction)
@@ -713,12 +745,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (sessionOrHigh <= sessionOrLow)
 				return None("OR INVALIDO");
 
-			double range = High[0] - Low[0];
-			if (range < 6 * TickSize || IsExhaustionBar())
-				return None("VELA INVALIDA RETEST");
+			if (!IsQualityReversalBar(direction))
+				return None("RETEST DEBIL");
 
 			double buf = 6 * TickSize;
-			double maxOvershoot = Math.Max(atr[0] * 0.40, 8 * TickSize);
+			double maxOvershoot = Math.Max(atr[0] * 0.35, 8 * TickSize);
 
 			if (direction > 0)
 			{
@@ -728,7 +759,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				bool hold = Close[0] > sessionOrHigh && Close[0] > Open[0];
 				if (!tag || !hold)
 					return None("SIN RETEST OR HIGH");
-				return Hit(1, 86, "RETEST OPENING RANGE — LONG");
+				return Hit(1, 88, "RETEST OPENING RANGE — LONG");
 			}
 
 			if (!BrokeLevel(sessionOrLow, 1, 12, false))
@@ -737,7 +768,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			bool holdShort = Close[0] < sessionOrLow && Close[0] < Open[0];
 			if (!tagLow || !holdShort)
 				return None("SIN RETEST OR LOW");
-			return Hit(-1, 86, "RETEST OPENING RANGE — SHORT");
+			return Hit(-1, 88, "RETEST OPENING RANGE — SHORT");
 		}
 
 		private SignalSnapshot TryOrBreakout(int direction)
@@ -1241,6 +1272,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 				vwapCumVolume = 0;
 				vwapCumVolumePrice = 0;
 				rthVwapStarted = true;
+				prevRthVwap = 0;
+			}
+			else
+			{
+				prevRthVwap = currentVwap;
 			}
 
 			double typical = (High[0] + Low[0] + Close[0]) / 3.0;
@@ -1329,6 +1365,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			vwapCumVolume = 0;
 			vwapCumVolumePrice = 0;
 			currentVwap = Close[0];
+			prevRthVwap = 0;
 			rthVwapStarted = false;
 			sessionOrHigh = 0;
 			sessionOrLow = 0;
