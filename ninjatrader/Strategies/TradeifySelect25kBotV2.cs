@@ -247,7 +247,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				emaSlow = EMA(SlowEmaPeriod);
 				atr = ATR(AtrPeriod);
 				adx = ADX(AdxPeriod);
-				rsi = RSI(RsiPeriod);
+				rsi = RSI(RsiPeriod, 3);
 				volumeSma = SMA(Volume, VolumePeriod);
 				peakEodEquity = AccountStartBalance;
 				LoadPersistedDays();
